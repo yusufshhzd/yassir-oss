@@ -74,14 +74,14 @@ async function resolveWatchlistSymbols(name: string): Promise<string[]> {
 
 export async function runWatchCommand(argv: string[]): Promise<void> {
   const parsed = parseWatchArgs(argv);
-if ('error' in parsed) {
-  console.error(`yassir watch: ${parsed.error}`);
-  console.error(
-    'usage: yassir watch <SYMBOLS|watchlist:NAME> [--once] [--json] [--interval MIN] [--webhook URL] [--force]',
-  );
-  process.exitCode = 2;
-  return;
-}
+  if ('error' in parsed) {
+    console.error(`yassir watch: ${parsed.error}`);
+    console.error(
+      'usage: yassir watch <SYMBOLS|watchlist:NAME> [--once] [--json] [--interval MIN] [--webhook URL] [--force]',
+    );
+    process.exitCode = 2;
+    return;
+  }
 
   if (!getHalalTerminalApiKey()) {
     console.error('yassir watch: HALAL_TERMINAL_API_KEY is not set — get a free key at https://halalterminal.com and export it.');
