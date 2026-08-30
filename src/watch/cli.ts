@@ -4,7 +4,7 @@ import { getHalalTerminalApiKey, halalTerminalGet } from '../integrations/halalt
 import type { WebhookFormat } from './alert.js';
 import { runOnce, runWatch, type WatchOptions } from './monitor.js';
 
-//allowed "raw" format as well, which is just a generic . format flag not actually required for raw webhooks, but can be used to override auto-detection of discord/slack
+//allowed "raw" format as well, which is just a generic format flag not actually required for raw webhooks, but can be used to override auto-detection of discord/slack
 const WEBHOOK_FORMATS: WebhookFormat[] = ['discord', 'slack', 'raw'];
 
 const DEFAULT_INTERVAL_MIN = 360; // 6h
