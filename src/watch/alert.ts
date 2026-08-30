@@ -37,9 +37,47 @@ export function detectWebhookFormat(url: string): WebhookFormat {
   return 'raw';
 }
 
-//discord "content:" or slack "text:" contains whole batch of changes
+export const DISCORD_CONTENT_LIMIT = 2000;
+export const SLACK_TEXT_LIMIT = 40000;
+
+
+const HEADER_RESERVE = 100;
+
 export function formatAlertMessage(changes: Change[]): string {
   return [`⚠️ ${changes.length} compliance change(s):`, ...changes.map(formatChange)].join('\n');
+}
+
+
+export function chunkAlertMessages(changes: Change[], limit: number): string[] {
+  if (changes.length === 0) return [];
+  const budget = Math.max(1, limit - HEADER_RESERVE);
+  const lines = changes.map((c) => {
+    const line = formatChange(c);
+    return line.length > budget ? `${line.slice(0, budget - 1)}…` : line;
+  });
+
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let currentLen = 0;
+  for (const line of lines) {
+    const nextLen = current.length === 0 ? line.length : currentLen + 1 + line.length;
+    if (nextLen > budget && current.length > 0) {
+      chunks.push(current);
+      current = [];
+      currentLen = 0;
+    }
+    current.push(line);
+    currentLen = current.length === 1 ? line.length : currentLen + 1 + line.length;
+  }
+  if (current.length) chunks.push(current);
+
+  const total = chunks.length;
+  return chunks.map((chunkLines, i) => {
+    const header = total > 1
+      ? `⚠️ compliance changes ${i + 1}/${total} (${changes.length} total):`
+      : `⚠️ ${changes.length} compliance change(s):`;
+    return [header, ...chunkLines].join('\n');
+  });
 }
 
 export interface BuildWebhookPayloadOptions {
@@ -48,20 +86,18 @@ export interface BuildWebhookPayloadOptions {
   now?: Date;
 }
 
-//discord/slack get their own format. all others get a generic raw payload.
-//if you dont pass fornat, it will be inferred from the url (discord/slack/raw)
-export function buildWebhookPayload(
+export function buildWebhookPayloads(
   url: string,
   changes: Change[],
   opts: BuildWebhookPayloadOptions = {},
-): { body: unknown } {
+): { body: unknown }[] {
   const format = opts.format ?? detectWebhookFormat(url);
   if (format === 'discord') {
-    return { body: { content: formatAlertMessage(changes) } };
+    return chunkAlertMessages(changes, DISCORD_CONTENT_LIMIT).map((content) => ({ body: { content } }));
   }
   if (format === 'slack') {
-    return { body: { text: formatAlertMessage(changes) } };
+    return chunkAlertMessages(changes, SLACK_TEXT_LIMIT).map((text) => ({ body: { text } }));
   }
   const at = opts.now ?? new Date();
-  return { body: { source: 'yassir-watch', at: at.toISOString(), changes } };
+  return [{ body: { source: 'yassir-watch', at: at.toISOString(), changes } }];
 }

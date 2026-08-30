@@ -5,7 +5,7 @@
  */
 import { halalTerminalGet, halalTerminalPost } from '../integrations/halalterminal/client.js';
 import { diffVerdicts, type Change, type Verdict, type VerdictMap } from './diff.js';
-import { alertableChanges, buildWebhookPayload, formatChange, type WebhookFormat } from './alert.js';
+import { alertableChanges, buildWebhookPayloads, formatChange, type WebhookFormat } from './alert.js';
 import { loadState, saveState } from './state.js';
 
 export function parseVerdict(payload: unknown): Verdict {
@@ -34,15 +34,20 @@ export async function fetchVerdicts(
 }
 
 async function sendWebhook(url: string, changes: Change[], format?: WebhookFormat): Promise<void> {
-  try {
-    const { body } = buildWebhookPayload(url, changes, { format });
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    /* best-effort; never crash the daemon on a webhook failure */
+  const payloads = buildWebhookPayloads(url, changes, { format });
+  for (const { body } of payloads) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        console.error(`watch webhook: ${url} responded ${res.status} ${res.statusText}`);
+      }
+    } catch (err) {
+      console.error(`watch webhook: failed to reach ${url}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 

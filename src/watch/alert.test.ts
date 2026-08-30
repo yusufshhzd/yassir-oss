@@ -4,7 +4,10 @@ import {
   alertableChanges,
   detectWebhookFormat,
   formatAlertMessage,
-  buildWebhookPayload,
+  chunkAlertMessages,
+  buildWebhookPayloads,
+  DISCORD_CONTENT_LIMIT,
+  SLACK_TEXT_LIMIT,
 } from './alert.js';
 import type { Change } from './diff.js';
 
@@ -58,29 +61,86 @@ describe('formatAlertMessage', () => {
   });
 });
 
-describe('buildWebhookPayload', () => {
-  const changes: Change[] = [{ symbol: 'AAPL', kind: 'flipped_out', from: true, to: false }];
-
-  test('shapes a Discord payload with a "content" field, auto-detected from the URL', () => {
-    const { body } = buildWebhookPayload('https://discord.com/api/webhooks/1/abc', changes);
-    expect(body).toEqual({ content: formatAlertMessage(changes) });
+describe('chunkAlertMessages', () => {
+  test('fits everything into one message when it is well under the limit', () => {
+    const changes: Change[] = [
+      { symbol: 'AAPL', kind: 'flipped_out', from: true, to: false },
+      { symbol: 'MSFT', kind: 'flipped_in', from: false, to: true },
+    ];
+    const chunks = chunkAlertMessages(changes, DISCORD_CONTENT_LIMIT);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toContain('🔴 AAPL');
+    expect(chunks[0]).toContain('🟢 MSFT');
   });
 
-  test('shapes a Slack payload with a "text" field, auto-detected from the URL', () => {
-    const { body } = buildWebhookPayload('https://hooks.slack.com/services/T00/B00/xyz', changes);
-    expect(body).toEqual({ text: formatAlertMessage(changes) });
+  test('splits a large watchlist across multiple messages, each under the limit', () => {
+    const changes: Change[] = Array.from({ length: 500 }, (_, i) => ({
+      symbol: `SYM${i}`,
+      kind: 'flipped_out' as const,
+      from: true,
+      to: false,
+    }));
+    const limit = 200;
+    const chunks = chunkAlertMessages(changes, limit);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(limit);
+    // every change still shows up somewhere across the chunks — nothing dropped
+    const joined = chunks.join('\n');
+    for (const c of changes) expect(joined).toContain(c.symbol);
+  });
+
+  test('returns nothing for an empty change list', () => {
+    expect(chunkAlertMessages([], DISCORD_CONTENT_LIMIT)).toEqual([]);
+  });
+});
+
+describe('buildWebhookPayloads', () => {
+  const changes: Change[] = [{ symbol: 'AAPL', kind: 'flipped_out', from: true, to: false }];
+
+  test('shapes a single-element Discord payload with a "content" field, auto-detected from the URL', () => {
+    const payloads = buildWebhookPayloads('https://discord.com/api/webhooks/1/abc', changes);
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]!.body).toEqual({ content: formatAlertMessage(changes) });
+  });
+
+  test('shapes a single-element Slack payload with a "text" field, auto-detected from the URL', () => {
+    const payloads = buildWebhookPayloads('https://hooks.slack.com/services/T00/B00/xyz', changes);
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]!.body).toEqual({ text: formatAlertMessage(changes) });
   });
 
   test('an explicit format overrides URL detection', () => {
-    const { body } = buildWebhookPayload('https://example.com/hook', changes, { format: 'discord' }) as {
+    const payloads = buildWebhookPayloads('https://example.com/hook', changes, { format: 'discord' }) as {
       body: { content: string };
-    };
-    expect(body.content).toContain('🔴 AAPL');
+    }[];
+    expect(payloads[0]!.body.content).toContain('🔴 AAPL');
   });
 
-  test('keeps the raw JSON envelope for plain webhooks (no breaking change)', () => {
+  test('keeps the raw JSON envelope as a single payload for plain webhooks (no breaking change)', () => {
     const now = new Date('2026-01-01T00:00:00.000Z');
-    const { body } = buildWebhookPayload('https://example.com/hook', changes, { now });
-    expect(body).toEqual({ source: 'yassir-watch', at: now.toISOString(), changes });
+    const payloads = buildWebhookPayloads('https://example.com/hook', changes, { now });
+    expect(payloads).toEqual([{ body: { source: 'yassir-watch', at: now.toISOString(), changes } }]);
+  });
+
+  test('splits a large watchlist across several Discord requests, each within the length cap', () => {
+    const many: Change[] = Array.from({ length: 500 }, (_, i) => ({
+      symbol: `SYM${i}`,
+      kind: 'flipped_out' as const,
+      from: true,
+      to: false,
+    }));
+    const payloads = buildWebhookPayloads('https://discord.com/api/webhooks/1/abc', many) as {
+      body: { content: string };
+    }[];
+    expect(payloads.length).toBeGreaterThan(1);
+    for (const { body } of payloads) expect(body.content.length).toBeLessThanOrEqual(DISCORD_CONTENT_LIMIT);
+  });
+
+  test('a batch that fits Slack in one message still respects SLACK_TEXT_LIMIT', () => {
+    const payloads = buildWebhookPayloads('https://hooks.slack.com/services/T00/B00/xyz', changes) as {
+      body: { text: string };
+    }[];
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]!.body.text.length).toBeLessThanOrEqual(SLACK_TEXT_LIMIT);
   });
 });
