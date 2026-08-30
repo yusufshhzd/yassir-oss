@@ -46,6 +46,15 @@ describe('webhook format detection', () => {
   test('falls back to raw for anything else', () => {
     expect(detectWebhookFormat('https://example.com/hook')).toBe('raw');
   });
+
+  test('does not misclassify a third-party URL that merely contains a Discord/Slack path', () => {
+    expect(detectWebhookFormat('https://example.com/forward/https://discord.com/api/webhooks/1/a')).toBe('raw');
+    expect(detectWebhookFormat('https://example.com/?u=https://hooks.slack.com/services/T/B/x')).toBe('raw');
+  });
+
+  test('rejects an unparseable URL as raw instead of throwing', () => {
+    expect(detectWebhookFormat('not a url')).toBe('raw');
+  });
 });
 
 describe('formatAlertMessage', () => {

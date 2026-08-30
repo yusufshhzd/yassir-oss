@@ -28,12 +28,28 @@ export function alertableChanges(changes: Change[], includeBaseline = false): Ch
 
 export type WebhookFormat = 'discord' | 'slack' | 'raw';
 
-const DISCORD_WEBHOOK_RE = /\/\/(?:[^/]*\.)?(?:discord\.com|discordapp\.com)\/api\/webhooks\//i;
-const SLACK_WEBHOOK_RE = /\/\/hooks\.slack\.com\//i;
+function isDiscordHost(host: string): boolean {
+  return host === 'discord.com' || host.endsWith('.discord.com')
+    || host === 'discordapp.com' || host.endsWith('.discordapp.com');
+}
 
+function isSlackHost(host: string): boolean {
+  return host === 'hooks.slack.com';
+}
+
+// Matches against the parsed URL's hostname + path, not the raw string, so a
+// third-party/proxy URL that merely contains "discord.com/api/webhooks/" or
+// "hooks.slack.com/" somewhere in its path (or query) isn't misclassified.
 export function detectWebhookFormat(url: string): WebhookFormat {
-  if (DISCORD_WEBHOOK_RE.test(url)) return 'discord';
-  if (SLACK_WEBHOOK_RE.test(url)) return 'slack';
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return 'raw';
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (isDiscordHost(host) && parsed.pathname.startsWith('/api/webhooks/')) return 'discord';
+  if (isSlackHost(host)) return 'slack';
   return 'raw';
 }
 
@@ -82,7 +98,7 @@ export function chunkAlertMessages(changes: Change[], limit: number): string[] {
 
 export interface BuildWebhookPayloadOptions {
   format?: WebhookFormat;
-  //default to now for tests. prod never sets it, defaulting to date at cal ltime
+  //default to now for tests. prod never sets it, defaulting to date at call time
   now?: Date;
 }
 
