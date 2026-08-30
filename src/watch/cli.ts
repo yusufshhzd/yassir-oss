@@ -39,7 +39,11 @@ export function parseWatchArgs(argv: string[]): ParsedWatch | { error: string } 
     else if (a === '--force' || a === '--refresh') forceRefresh = true;
     else if (a === '--interval') intervalMin = Number(argv[++i]);
     else if (a === '--webhook') webhook = argv[++i];
-    else if (a === '--format') webhookFormat = argv[++i] as WebhookFormat;
+    else if (a === '--format') {
+      const value = argv[++i];
+      if (value === undefined) return { error: '--format requires a value' };
+      webhookFormat = value as WebhookFormat;
+    }
     else if (a === '--state') statePath = argv[++i]!;
     else if (a.startsWith('watchlist:')) watchlist = a.slice('watchlist:'.length).trim();
     else if (a.startsWith('--')) return { error: `unknown flag: ${a}` };
